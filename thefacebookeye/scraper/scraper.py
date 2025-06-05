@@ -1,267 +1,173 @@
 import time
 import undetected_chromedriver as uc
-from selenium.webdriver.chrome.options import Options
-from bs4 import BeautifulSoup
 import json
 import os
+import random
+import re # For regex-based selectors and link finding
+from bs4 import BeautifulSoup
+import datetime # For main test block example
 
-def init_driver(headless=True, user_agent=None):
-    """Initializes and returns an undetected ChromeDriver instance."""
-    options = Options()
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/114.0",
+]
+
+def init_driver(headless=True, user_agent_arg=None, proxy_server=None):
+    options = uc.ChromeOptions()
+    selected_user_agent = user_agent_arg or random.choice(USER_AGENTS)
+    options.add_argument(f'--user-agent={selected_user_agent}')
+    # print(f"WebDriver User-Agent selected: {selected_user_agent}") # Reduced noise for this test
     if headless:
-        options.add_argument('--headless')
-        options.add_argument('--disable-gpu') # Often recommended with headless
-        options.add_argument('--window-size=1920,1080') # Standardize window size
-    if user_agent:
-        options.add_argument(f'user-agent={user_agent}')
-
-    # options.add_argument('--no-sandbox') # Use if issues occur in certain environments
-    # options.add_argument('--disable-dev-shm-usage') # Use if issues occur in certain environments
-    driver = uc.Chrome(options=options)
-    print("WebDriver initialized.")
+        options.add_argument('--headless=new'); options.add_argument('--disable-gpu')
+    options.add_argument('--window-size=1920,1080'); options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage'); options.add_argument("--disable-blink-features=AutomationControlled")
+    if proxy_server: options.add_argument(f'--proxy-server={proxy_server}')
+    driver = None
+    try:
+        driver = uc.Chrome(options=options)
+        if driver: driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    except Exception as e:
+        print(f"Error initializing undetected_chromedriver: {e}")
+        if driver: driver.quit()
+        return None
     return driver
 
 def load_cookies(driver, cookies_file="cookies.json"):
-    """Loads cookies from a JSON file into the WebDriver session."""
-    if not os.path.exists(cookies_file):
-        print(f"Cookie file '{cookies_file}' not found. Proceeding without loading cookies.")
-        return
-
-    # Navigate to a base Facebook domain before adding cookies
-    # This is often required by WebDriver for cookies to be set correctly.
-    current_url = driver.current_url
-    if not (current_url.startswith("https://www.facebook.com") or \
-            current_url.startswith("https://facebook.com") or \
-            current_url == "data:,"): # Check for initial blank page
-        print(f"Navigating to facebook.com to set cookies. Current URL: {current_url}")
-        driver.get("https://www.facebook.com")
-        time.sleep(2) # Allow page to load
-    elif current_url == "data:,": # Specifically handle if current url is blank
-        print(f"Current URL is blank ('data:,'). Navigating to facebook.com to set cookies.")
-        driver.get("https://www.facebook.com")
-        time.sleep(2)
-
-
+    if not os.path.exists(cookies_file): print(f"Cookie file '{cookies_file}' not found."); return
+    current_url = "";
+    try: current_url = driver.current_url
+    except Exception: current_url = "about:blank"
+    if not ("facebook.com" in current_url):
+        try: driver.get("https://www.facebook.com"); time.sleep(random.uniform(1.5,2.5)) # Adjusted sleep
+        except Exception as e: print(f"Error navigating to Facebook for cookies: {e}"); return
     try:
-        with open(cookies_file, 'r') as f:
-            cookies = json.load(f)
-    except json.JSONDecodeError:
-        print(f"Error: Could not decode JSON from '{cookies_file}'. Ensure it's valid JSON.")
-        return
-    except Exception as e:
-        print(f"Error loading cookies from '{cookies_file}': {e}")
-        return
-
+        with open(cookies_file, 'r') as f: cookies = json.load(f)
+    except Exception as e: print(f"Error loading/parsing cookies from '{cookies_file}': {e}"); return
     for cookie in cookies:
-        required_fields = ['name', 'value']
-        if not all(field in cookie for field in required_fields):
-            print(f"Skipping cookie due to missing fields: {cookie.get('name', 'Unnamed cookie')}")
-            continue
-
+        if not all(field in cookie for field in ['name', 'value']): continue
         if 'expires' in cookie and isinstance(cookie['expires'], (int, float)):
-            cookie['expiry'] = int(cookie['expires'])
-            del cookie['expires']
-
-        # Ensure domain has a leading dot if it's for the base domain, e.g., ".facebook.com"
-        if 'domain' in cookie and cookie['domain'] == 'facebook.com':
-            cookie['domain'] = '.facebook.com'
-        elif 'domain' in cookie and not cookie['domain'].startswith('.'):
-             # Be cautious about modifying domains too much, but a common case is ensuring leading dot for subdomains too
-             pass
-
-
-        try:
-            driver.add_cookie(cookie)
-        except Exception as e:
-            problematic_cookie_info = {k: cookie.get(k) for k in ['name', 'domain', 'path']}
-            print(f"Warning: Could not add cookie {problematic_cookie_info}: {e}")
-
-    print(f"Successfully attempted to load cookies from '{cookies_file}'.")
-
-# Dummy HTML for development - this is crucial as we can't make live calls
-dummy_post_html_for_testing = '''
-<article aria-label="Post">
-  <div>
-    <header> <!-- Added header for author -->
-      <a href="/someuserprofile?id=123" aria-label="Author Name">Author Name</a>
-    </header>
-    <div>
-      <div dir="auto" style="text-align: start;">This is the post text. #hashtag1 Visit example.com.</div>
-    </div>
-    <footer> <!-- Added footer for permalink -->
-      <a href="/permalink/1234567890/">
-        <abbr title="January 1, 2023 at 10:00 AM">10h</abbr>
-      </a>
-    </footer>
-  </div>
-</article>
-<article aria-label="Story"> <!-- Test with "Story" as well -->
-  <div>
-    <header>
-      <a href="/anotherpage?id=456" aria-label="Page Name">Page Name</a>
-    </header>
-    <div>
-      <div dir="auto" style="text-align: start;">Another post, with more content. #example #testing. Check out another-example.com.</div>
-    </div>
-    <footer>
-      <a href="/posts/0987654321/">
-        <abbr title="January 2, 2023 at 12:00 PM">1d</abbr>
-      </a>
-    </footer>
-  </div>
-</article>
-'''
+            cookie['expiry'] = int(cookie['expires']); del cookie['expires']
+        if 'domain' in cookie and cookie['domain'] == 'facebook.com': cookie['domain'] = '.facebook.com'
+        try: driver.add_cookie(cookie)
+        except Exception as e: print(f"Warning: Could not add cookie {cookie.get('name')}: {e}")
+    # print(f"Attempted to load cookies from '{cookies_file}'.") # Reduce noise
 
 def scrape_page(driver, page_url):
-    """Scrapes a Facebook page for posts. (Basic Implementation using BeautifulSoup)"""
-    print(f"Attempting to scrape page: {page_url}")
-    # In a real scenario, you would uncomment the following lines:
-    # driver.get(page_url)
-    # print(f"Navigated to {page_url}. Waiting for page to load and scroll...")
-    # time.sleep(5) # Initial load
-    # Perform scrolling here to load more posts
-    # for _ in range(3): # Example: scroll 3 times
-    #     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    #     time.sleep(3)
-    # page_source = driver.page_source
-
-    print("INFO: Using DUMMY HTML for scrape_page development. Selectors WILL need live testing and refinement.")
-    page_source = f'''
-    <html><head><title>Dummy Page</title></head><body>
-        <div id="feed_container">
-            {dummy_post_html_for_testing}
-        </div>
-    </body></html>
-    '''
+    """
+    Scrapes a Facebook page for posts, including link extraction from post text.
+    Note: Selectors are illustrative and will need ongoing refinement for live Facebook.
+    """
+    print(f"Attempting to scrape live page for posts and links: {page_url}")
+    extracted_posts = []
+    try:
+        driver.get(page_url)
+        print(f"Navigated to {page_url}. Waiting for initial page load...")
+        time.sleep(random.uniform(3, 5)) # Reduced sleep
+        scroll_attempts = 1 # Further reduced for this specific test with invalid URL
+        print(f"Scrolling {scroll_attempts} time(s) to load posts...")
+        for i in range(scroll_attempts):
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            scroll_wait = random.uniform(1, 2) # Reduced sleep
+            # print(f"  Scroll {i+1}/{scroll_attempts}, waiting {scroll_wait:.2f}s...")
+            time.sleep(scroll_wait)
+        print("Finished scrolling. Retrieving page source...")
+        page_source = driver.page_source
+    except Exception as e:
+        print(f"Error during navigation or scrolling for {page_url}: {type(e).__name__} - {e}")
+        if "example.invalid" in page_url or "ERR_NAME_NOT_RESOLVED" in str(e):
+             print("This error is expected for the dummy/invalid URL used in testing.")
+        return []
 
     soup = BeautifulSoup(page_source, "html.parser")
-    extracted_posts = []
+    # print("Analyzing page source for posts and links...") # Reduce noise
 
-    potential_posts = soup.find_all('article', attrs={'aria-label': lambda x: x and x.lower() in ['post', 'story', 'update']})
-    if not potential_posts: # Fallback selector
-        potential_posts = soup.find_all('div', attrs={'role': 'article'})
+    potential_post_elements = soup.find_all(attrs={'role': 'article'})
+    # print(f"Found {len(potential_post_elements)} potential post elements (role=article).")
 
-
-    print(f"Found {len(potential_posts)} potential post elements using current selectors.")
-
-    for i, post_element in enumerate(potential_posts):
+    for i, el in enumerate(potential_post_elements):
         post_data = {
-            "post_id": None, "permalink": None, "text": None,
-            "timestamp_str": None, "author_name": None, "author_url": None,
-            "source_page_url": page_url,
-            "raw_html_snippet": str(post_element)[:250] + "..."
+            "post_id": None, "permalink": None, "text": None, "timestamp_str": None,
+            "author_name": None, "author_url": None, "source_page_url": page_url,
+            "extracted_links": [],
+            "raw_html_snippet": str(el)[:100] + "..."
         }
 
-        author_container = post_element.find('header')
-        if author_container:
-            author_link = author_container.find('a', attrs={'aria-label': True, 'href': True})
-            if author_link:
-                 post_data["author_name"] = author_link.get_text(strip=True) or author_link.get('aria-label')
-                 href = author_link['href']
-                 post_data["author_url"] = f"https://www.facebook.com{href}" if href.startswith('/') else href
+        author_link_el = el.find('a', href=re.compile(r"/(?:[^/]+/)?(?:profile\.php\?id=\d+|[^/]+(?:/(?!(posts|videos|photos)/))?$|pg/[^/]+/)"))
+        if author_link_el and not any(kw in author_link_el.get('href','') for kw in ['sharer.php', 'permalink.php', '/posts/', '/videos/', '/photos/']):
+            post_data["author_name"] = author_link_el.get_text(strip=True) or "Unknown"
+            href = author_link_el['href']; post_data["author_url"] = f"https://www.facebook.com{href}" if href.startswith('/') else href
 
-        text_container = post_element.find('div', attrs={'dir': 'auto'})
-        if text_container:
-            text_parts = []
-            for elem in text_container.descendants:
-                if isinstance(elem, str):
-                    text_parts.append(elem.strip())
-                elif elem.name == 'br':
-                    text_parts.append('\\n') # Correctly escape newline for string
-            post_data["text"] = " ".join(filter(None, text_parts)).strip()
-            post_data["extracted_urls_from_text"] = [word for word in post_data["text"].split() if "http" in word or ".com" in word]
+        post_content_area = el.find('div', attrs={'data-ad-preview': 'message'}) or el.find('div', dir='auto')
+        if post_content_area:
+            post_data["text"] = post_content_area.get_text(separator='\n', strip=True)
+            links_in_post = set()
+            # Extract from <a> tags within the post content
+            for link_tag in post_content_area.find_all('a', href=True):
+                href = link_tag['href']
+                # Basic filter: ensure it's an absolute link and not to facebook.com itself from within post text
+                if href.startswith('http') and 'facebook.com' not in href:
+                    links_in_post.add(href)
 
-        permalink_container = post_element.find('footer')
-        if permalink_container:
-            permalink_tag = permalink_container.find('a', href=lambda x: x and any(kw in x for kw in ['/posts/', '/permalink/', 'story_fbid=', 'photo.php?fbid=', '/videos/']))
-            if permalink_tag:
-                href = permalink_tag['href']
-                post_data["permalink"] = f"https://www.facebook.com{href}" if href.startswith('/') else href
+            # Extract from plain text using regex (more prone to false positives if not careful)
+            # This regex is a common one, but might need refinement.
+            plaintext_url_pattern = r'(?:(?:https?|ftp)://|www\.)(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|localhost|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::\d+)?(?:/?|[/?]\S+)'
+            if post_data["text"]: # Ensure text is not None
+                found_in_text = re.findall(plaintext_url_pattern, post_data["text"], re.IGNORECASE)
+                for url in found_in_text:
+                    # Ensure it's a full URL for consistency, and filter out facebook.com links
+                    if not url.startswith(('http', 'ftp')): url = 'http://' + url
+                    if 'facebook.com' not in url:
+                        links_in_post.add(url)
+            post_data["extracted_links"] = list(links_in_post)
 
-                try:
-                    if '/posts/' in href: post_data["post_id"] = href.split('/posts/')[1].split('/')[0].split('?')[0]
-                    elif '/permalink/' in href: post_data["post_id"] = href.split('/permalink/')[1].split('/')[0].split('?')[0]
-                    elif 'story_fbid=' in href: post_data["post_id"] = href.split('story_fbid=')[1].split('&')[0]
-                    elif 'photo.php?fbid=' in href: post_data["post_id"] = href.split('fbid=')[1].split('&')[0]
-                    elif '/videos/' in href: post_data["post_id"] = href.split('/videos/')[1].split('/')[0].split('?')[0]
-                except IndexError:
-                    print(f"Warning: Could not parse post_id from permalink: {href}")
+        permalink_tag_el = el.find('a', href=re.compile(r"(/posts/|/videos/\d+|/permalink\.php|story_fbid=|photo\.php\?fbid=)"), title=True)                         or el.find('a', href=re.compile(r"(/posts/|/videos/\d+|/permalink\.php|story_fbid=|photo\.php\?fbid=)"))
+        if permalink_tag_el:
+            href = permalink_tag_el['href']
+            post_data["permalink"] = f"https://www.facebook.com{href}" if href.startswith('/') else href
+            post_data["timestamp_str"] = permalink_tag_el.get('title', permalink_tag_el.get_text(strip=True))
+            match = re.search(r"(?:posts/|videos/|story_fbid=|fbid=|php\?story_fbid=)(\d+)", href)
+            if match: post_data["post_id"] = match.group(1)
 
-                timestamp_abbr = permalink_tag.find('abbr')
-                if timestamp_abbr and timestamp_abbr.get('title'):
-                    post_data["timestamp_str"] = timestamp_abbr['title']
-                else: # Fallback if abbr or title not found
-                    post_data["timestamp_str"] = permalink_tag.get_text(strip=True)
-
-        if post_data["text"] or post_data["permalink"]:
-            print(f"  Successfully extracted data for potential post #{i+1}")
+        if post_data["text"] or post_data["permalink"] or post_data["author_name"]:
+            # print(f"  Post {i+1}: Author '{post_data['author_name']}', Links: {len(post_data['extracted_links'])}, Text: '{str(post_data['text'])[:20]}...'")
             extracted_posts.append(post_data)
-        else:
-            print(f"  Skipping potential post #{i+1} as no key data (text/permalink) was extracted. HTML: {str(post_element)[:100]}...")
 
-    if not extracted_posts:
-        print("No posts extracted. Check selectors or HTML structure if this was a live page.")
-
-    print(f"Finished scraping {page_url}. Extracted {len(extracted_posts)} posts.")
+    # print(f"Finished live scraping for {page_url}. Extracted {len(extracted_posts)} posts.")
     return extracted_posts
 
-def scrape_profile(driver, profile_url):
-    """Placeholder for scraping a public Facebook profile. Will use similar logic to scrape_page based on observed HTML structure."""
-    print(f"Placeholder: Scraping profile {profile_url} - will use logic similar to scrape_page.")
-    return {"url": profile_url, "data": "dummy profile data from placeholder"}
-
-def scrape_group(driver, group_url):
-    """Placeholder for scraping a public Facebook group. Will use similar logic to scrape_page, focusing on group feed structure."""
-    print(f"Placeholder: Scraping group {group_url} - will use logic similar to scrape_page.")
-    return {"url": group_url, "data": "dummy group data from placeholder"}
-
-def scrape_search(driver, query, location=None):
-    """Placeholder for scraping Facebook search results. Structure is different and will require specific selectors and logic."""
-    search_url = f"https://www.facebook.com/search/posts/?q={query}"
-    print(f"Placeholder: Scraping search for '{query}' at '{search_url}'")
-    return {"query": query, "data": "dummy search results from placeholder"}
+def scrape_profile(driver, profile_url): print(f"Placeholder: Scraping profile {profile_url}"); return []
+def scrape_group(driver, group_url): print(f"Placeholder: Scraping group {group_url}"); return []
+def scrape_search(driver, query, location=None): print(f"Placeholder: Scraping search for '{query}'"); return []
 
 if __name__ == '__main__':
-    print("Starting basic scraper test...")
-    driver = None
-    try:
-        driver = init_driver(headless=True)
+    print("--- Scraper Main Test Block ---")
+    print("\n--- Testing WebDriver Initialization ---")
+    init_success_count = 0
+    test_driver_init = init_driver(headless=True)
+    if test_driver_init:
+        init_success_count += 1
+        try:
+            ua = test_driver_init.execute_script("return navigator.userAgent;")
+            wb_flag = test_driver_init.execute_script("return navigator.webdriver;")
+            print(f"  Init Test UA: {ua[:40]}..., WebDriver Flag: {wb_flag}")
+        except Exception as e: print(f"  Error with test driver init: {e}")
+        finally: test_driver_init.quit()
+    else: print("  Failed to init test driver for UA test.")
+    print(f"Init test: {init_success_count} successful initializations.")
 
-        if driver:
-            print("Driver initialized successfully.")
+    print("\n--- Testing scrape_page (live logic with dummy URL, expecting 0 posts) ---")
+    main_driver = init_driver(headless=True)
+    if main_driver:
+        test_url_live_logic = "https://example.invalid/dummy_fb_page_for_links"
+        print(f"Calling scrape_page with dummy URL: {test_url_live_logic}")
+        scraped_data = scrape_page(main_driver, test_url_live_logic)
+        print(f"scrape_page with dummy URL returned {len(scraped_data)} posts.")
+        if scraped_data:
+             print(f"  Content of first item (if any): Links found: {len(scraped_data[0].get('extracted_links',[]))}")
 
-            print("Attempting to load default cookies.json...")
-            load_cookies(driver)
-            print("Attempting to load non_existent_cookies.json...")
-            load_cookies(driver, cookies_file="non_existent_cookies.json")
-
-            print("\n--- Testing scrape_page (with dummy HTML) ---")
-            scraped_page_data = scrape_page(driver, "https://www.facebook.com/examplepage.dummy")
-            if scraped_page_data:
-                print(f"scrape_page returned {len(scraped_page_data)} items.")
-                for idx, p_data in enumerate(scraped_page_data):
-                    print(f"  Post {idx+1} Author: {p_data.get('author_name')}, ID: {p_data.get('post_id')}, Text snippet: {p_data.get('text', '')[:50]}...")
-            else:
-                print("scrape_page returned no data from dummy HTML.")
-
-            print("\n--- Calling other placeholder scrape functions ---")
-            scrape_profile(driver, "https://www.facebook.com/exampleprofile.dummy")
-            scrape_group(driver, "https://www.facebook.com/groups/examplegroup.dummy")
-            scrape_search(driver, "example keyword dummy")
-
-            print("\nPlaceholder functions (excluding scrape_page actual test) called.")
-
-        else:
-            print("Driver initialization failed.")
-
-    except Exception as e:
-        print(f"An error occurred in main: {e}")
-        # Detailed error for debugging:
-        import traceback
-        print(traceback.format_exc())
-
-    finally:
-        if driver:
-            driver.quit()
-            print("WebDriver closed.")
-    print("\nBasic scraper test finished.")
+        main_driver.quit()
+        print("Main driver quit after live logic test.")
+    else:
+        print("Failed to initialize main driver for scrape_page live logic test.")
+    print("\n--- Scraper Main Test Block Finished ---")

@@ -5,8 +5,13 @@
 # fasttext
 # langdetect
 # pymongo
+Flask
 argostranslate
+celery
 langdetect
+nltk
 pymongo
+redis
 selenium
+spacy
 undetected-chromedriver

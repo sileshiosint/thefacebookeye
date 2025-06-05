@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TheFacebookEye Dashboard</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding:0; background-color: #f0f2f5; color: #1c1e21; }
+        header { background-color: #1877f2; color: white; padding: 1em 0; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        header h1 { margin: 0; font-size: 2em; }
+        .container { width: 90%; max-width: 1200px; margin: 20px auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
+        .post { border: 1px solid #dddfe2; margin-bottom: 20px; padding: 15px; border-radius: 8px; background-color: #ffffff; }
+        .post h3 { margin-top: 0; margin-bottom: 10px; font-size: 1.2em; color: #050505; }
+        .post h3 a { color: #1877f2; text-decoration: none; }
+        .post h3 a:hover { text-decoration: underline; }
+        .post p { margin-bottom: 8px; line-height: 1.6; }
+        .post .meta { font-size: 0.85em; color: #606770; margin-bottom: 10px; }
+        .post .text-content { white-space: pre-wrap; font-size: 0.95em; }
+        .error { background-color: #ffebe8; color: #c00; border: 1px solid #ffbdad; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+        .filter-form { margin-bottom: 25px; padding: 20px; background-color: #f0f2f5; border-radius: 8px; display: flex; align-items: center; gap:15px; flex-wrap:wrap; }
+        .filter-form input[type="text"], .filter-form input[type="number"] { padding: 10px; border: 1px solid #ccd0d5; border-radius: 6px; font-size: 0.95em; flex-grow:1; min-width:150px;}
+        .filter-form button { padding: 10px 20px; background-color: #1877f2; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.95em; font-weight: bold; }
+        .filter-form button:hover { background-color: #166fe5; }
+        .no-posts { text-align: center; color: #606770; margin-top: 40px; font-size: 1.1em; }
+        .risk-high { border-left: 5px solid #dc3545; }
+        .risk-medium { border-left: 5px solid #ffc107; }
+        .risk-low { border-left: 5px solid #28a745; }
+    </style>
+</head>
+<body>
+    <header><h1>TheFacebookEye Dashboard</h1></header>
+    <div class="container">
+        {% if error_message %}
+            <div class="error">{{ error_message }}</div>
+        {% endif %}
+        <form class="filter-form" method="GET" action="/">
+            <input type="text" name="keyword" placeholder="Search keyword..." value="{{ search_keyword or '' }}">
+            <input type="number" name="min_risk_score" step="0.01" min="0" max="1" placeholder="Min Risk (0.0-1.0)" value="{{ min_risk_score or '' }}">
+            <button type="submit">Filter</button>
+        </form>
+        {% if posts %}
+            {% for post in posts %}
+                <div class="post {% if post.risk_score >= 0.7 %}risk-high{% elif post.risk_score >= 0.4 %}risk-medium{% else %}risk-low{% endif %}">
+                    <h3>
+                        {% if post.author.profile_url %}<a href="{{ post.author.profile_url }}" target="_blank">{{ post.author.name }}</a>
+                        {% else %}{{ post.author.name }}{% endif %}
+                        <span class="meta">(Source:
+                        {% if post.source.url %}<a href="{{ post.source.url }}" target="_blank">{{ post.source.name or post.page_metadata.name or 'Link' }}</a>
+                        {% else %}{{ post.source.name or post.page_metadata.name or 'N/A' }}{% endif %})</span>
+                    </h3>
+                    <p class="text-content">{{ post.post_data.text }}</p>
+                    <p class="meta">
+                        <strong>Post ID:</strong> {{ post.post_data.id }} |
+                        <strong>Timestamp:</strong> {{ post.post_data.timestamp_str }} |
+                        <strong>Risk Score:</strong> {{ "%.2f"|format(post.risk_score) }}
+                    </p>
+                    <p class="meta">
+                        <strong>Permalink:</strong>
+                        {% if post.post_data.permalink %}<a href="{{ post.post_data.permalink }}" target="_blank">View Original Post</a>
+                        {% else %}N/A{% endif %}
+                    </p>
+                    {% if post.language_analysis.detected_language %}<p class="meta"><strong>Language:</strong> {{ post.language_analysis.detected_language }}</p>{% endif %}
+                    {% if post.nlp_features.entities %}<p class="meta"><strong>Entities:</strong> {{ post.nlp_features.entities|join(', ') }}</p>{% endif %}
+                    <p class="meta"><em>DB ID: {{ post._id_str }} | Inserted: {{ post.inserted_at_db.strftime('%Y-%m-%d %H:%M:%S UTC') if post.inserted_at_db else 'N/A' }}</em></p>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="no-posts">No posts found matching your criteria, or no data in database.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

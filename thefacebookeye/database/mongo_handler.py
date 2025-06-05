@@ -119,7 +119,8 @@ if __name__ == '__main__':
             "post": {
                 "id": "test_post_001", "text": "Hello MongoDB from mongo_handler.py!",
                 "timestamp_str": str(datetime.datetime.utcnow()), "permalink": "http://example.com/post/001",
-            },
+
+                "extracted_links": ["http://example.com/link1", "http://another.org/article"],},
             "scraped_at": datetime.datetime.utcnow()
         }
 
