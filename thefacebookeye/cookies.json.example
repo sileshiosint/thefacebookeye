@@ -1,0 +1,22 @@
+[
+  {
+    "name": "c_user",
+    "value": "YOUR_FACEBOOK_USER_ID_EXAMPLE",
+    "domain": ".facebook.com",
+    "path": "/",
+    "expires": 1700000000,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "xs",
+    "value": "YOUR_XS_COOKIE_VALUE_EXAMPLE",
+    "domain": ".facebook.com",
+    "path": "/",
+    "expires": 1700000000,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  }
+]

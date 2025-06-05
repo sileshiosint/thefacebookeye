@@ -1,0 +1,12 @@
+# Flask
+# argostranslate
+# beautifulsoup4
+# celery
+# fasttext
+# langdetect
+# pymongo
+argostranslate
+langdetect
+pymongo
+selenium
+undetected-chromedriver

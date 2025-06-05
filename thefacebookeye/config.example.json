@@ -1,0 +1,23 @@
+{
+  "target_pages": [
+    "https://www.facebook.com/MetaAI",
+    "https://www.facebook.com/GoogleAI"
+  ],
+  "target_groups": [
+    "https://www.facebook.com/groups/publicgroup1example",
+    "https://www.facebook.com/groups/publicgroup2example"
+  ],
+  "target_keywords": [
+    "AI ethics",
+    "machine learning advancements",
+    "TPLF",
+    "clashes in Oromia",
+    "militia",
+    "mobilization"
+  ],
+  "search_location": "Ethiopia",
+  "date_filter": {
+    "enabled": false,
+    "days_past": 7
+  }
+}
